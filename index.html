@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Train Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Цвет неба по умолчанию */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+        #game-canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        /* Интерфейс кабины */
+        #dashboard {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 150px;
+            background: linear-gradient(to top, #222, #333);
+            border-top: 4px solid #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 40px;
+            box-shadow: 0 -10px 20px rgba(0,0,0,0.5);
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+        }
+        .btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            background-color: #555;
+            color: #ddd;
+            border-bottom: 4px solid #333;
+        }
+        .btn:active {
+            transform: translateY(4px);
+            border-bottom: 0px;
+        }
+        .btn.active {
+            background-color: #4CAF50;
+            color: white;
+            border-bottom: 0px;
+            transform: translateY(4px);
+        }
+        #btn-brake.active { background-color: #f44336; }
+        #btn-neutral.active { background-color: #ff9800; }
+        
+        #speedometer {
+            background: #111;
+            border: 3px solid #555;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            min-width: 150px;
+        }
+        #speed-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #00ff00;
+        }
+        #log {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D Канвас -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Логи и ошибки -->
+    <div id="log">Загрузка движка...</div>
+
+    <!-- Приборная панель (кабина) -->
+    <div id="dashboard">
+        <div class="control-group">
+            <span style="margin-bottom: 10px;">Контроллер тяги</span>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn" id="btn-accel">Разгон</button>
+                <button class="btn active" id="btn-neutral">Нейтраль</button>
+                <button class="btn" id="btn-brake">Тормоз</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div id="speedometer">
+                <div id="speed-value">0</div>
+                <div style="font-size: 14px; color: #aaa;">км/ч</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Подключаем Three.js и загрузчик GLTF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <script>
+        // --- ПЕРЕМЕННЫЕ ФИЗИКИ И СОСТОЯНИЯ ---
+        let speed = 0; // м/с
+        let maxSpeed = 30; // ~108 км/ч
+        let throttleState = 0; // 1 = разгон, 0 = нейтраль, -1 = тормоз
+        
+        const accelerationRate = 1.5; // Ускорение (м/с^2)
+        const brakingRate = 3.0; // Торможение (м/с^2)
+        const friction = 0.3; // Трение на нейтралке (м/с^2)
+
+        const logEl = document.getElementById('log');
+        const speedEl = document.getElementById('speed-value');
+
+        // --- ИНИЦИАЛИЗАЦИЯ THREE.JS ---
+        const canvas = document.getElementById('game-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Голубое небо
+        scene.fog = new THREE.Fog(0x87CEEB, 50, 500); // Легкая дымка для реализма
+
+        // Камера (глаза машиниста)
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        // Координаты из вашего ТЗ: X: 0, Y: 95, Z: 2 (с учетом конвертации осей)
+        camera.position.set(0, 2, -95); 
+
+        // Освещение
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(100, 200, 50);
+        scene.add(dirLight);
+
+        // --- ЗАГРУЗКА КАРТЫ ИЗ BLENDER ---
+        const loader = new THREE.GLTFLoader();
+        logEl.innerText = "Загрузка карты (map.glb)...";
+        
+        loader.load(
+            'map.glb', // Убедитесь, что файл называется так и лежит в папке
+            function (gltf) {
+                scene.add(gltf.scene);
+                logEl.innerText = "Карта успешно загружена!";
+                setTimeout(() => logEl.style.display = 'none', 3000);
+            },
+            function (xhr) {
+                const percent = Math.round((xhr.loaded / xhr.total) * 100);
+                if (percent) logEl.innerText = `Загрузка карты: ${percent}%`;
+            },
+            function (error) {
+                console.error(error);
+                logEl.innerText = "Ошибка загрузки карты! Проверьте локальный сервер и наличие файла map.glb.";
+                
+                // Создаем тестовую землю, если карта не загрузилась
+                const geo = new THREE.PlaneGeometry(1000, 1000);
+                const mat = new THREE.MeshLambertMaterial({ color: 0x55aa55 });
+                const plane = new THREE.Mesh(geo, mat);
+                plane.rotation.x = -Math.PI / 2;
+                scene.add(plane);
+                
+                // И тестовые рельсы для наглядности
+                const railGeo = new THREE.BoxGeometry(0.1, 0.18, 1000);
+                const railMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+                const rail1 = new THREE.Mesh(railGeo, railMat);
+                rail1.position.set(-0.75, 0.09, 0); // Колея 1.5м
+                const rail2 = new THREE.Mesh(railGeo, railMat);
+                rail2.position.set(0.75, 0.09, 0);
+                scene.add(rail1);
+                scene.add(rail2);
+            }
+        );
+
+        // --- УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ---
+        const btnAccel = document.getElementById('btn-accel');
+        const btnNeutral = document.getElementById('btn-neutral');
+        const btnBrake = document.getElementById('btn-brake');
+
+        function setThrottle(state) {
+            throttleState = state;
+            btnAccel.classList.remove('active');
+            btnNeutral.classList.remove('active');
+            btnBrake.classList.remove('active');
+
+            if (state === 1) btnAccel.classList.add('active');
+            else if (state === 0) btnNeutral.classList.add('active');
+            else if (state === -1) btnBrake.classList.add('active');
+        }
+
+        btnAccel.addEventListener('click', () => setThrottle(1));
+        btnNeutral.addEventListener('click', () => setThrottle(0));
+        btnBrake.addEventListener('click', () => setThrottle(-1));
+
+        // Горячие клавиши (W - разгон, S - нейтраль, Space - тормоз)
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyW' || e.code === 'ArrowUp') setThrottle(1);
+            if (e.code === 'KeyS' || e.code === 'ArrowDown') setThrottle(0);
+            if (e.code === 'Space') setThrottle(-1);
+        });
+
+        // --- ИГРОВОЙ ЦИКЛ (ФИЗИКА И РЕНДЕР) ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta(); // Время между кадрами (для плавной физики)
+
+            // Логика скорости
+            if (throttleState === 1) {
+                // Разгон
+                speed += accelerationRate * delta;
+                if (speed > maxSpeed) speed = maxSpeed;
+            } else if (throttleState === -1) {
+                // Торможение
+                speed -= brakingRate * delta;
+                if (speed < 0) speed = 0;
+            } else {
+                // Нейтралка (трение)
+                if (speed > 0) {
+                    speed -= friction * delta;
+                    if (speed < 0) speed = 0;
+                }
+            }
+
+            // Движение поезда (перемещаем камеру вдоль оси Z)
+            // Если в вашей карте пути идут вдоль другой оси, измените Z на X или Y.
+            camera.position.z -= speed * delta;
+
+            // Обновляем спидометр (перевод м/с в км/ч)
+            const kmh = Math.round(speed * 3.6);
+            speedEl.innerText = kmh;
+
+            renderer.render(scene, camera);
+        }
+
+        // Адаптация под размер окна
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Запуск
+        animate();
+    </script>
+</body>
+</html>
