@@ -3,267 +3,330 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Train Simulator</title>
+    <title>3D Симулятор Троллейбуса</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #87CEEB; /* Цвет неба по умолчанию */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
             user-select: none;
         }
-        #game-canvas {
-            display: block;
+        #canvas-container {
             width: 100vw;
             height: 100vh;
         }
-        /* Интерфейс кабины */
-        #dashboard {
+        /* HUD Интерфейс */
+        #hud {
             position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 150px;
-            background: linear-gradient(to top, #222, #333);
-            border-top: 4px solid #111;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 40px;
-            box-shadow: 0 -10px 20px rgba(0,0,0,0.5);
-        }
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            color: white;
-        }
-        .btn {
-            padding: 15px 30px;
-            font-size: 18px;
-            font-weight: bold;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: 0.2s;
-            background-color: #555;
-            color: #ddd;
-            border-bottom: 4px solid #333;
-        }
-        .btn:active {
-            transform: translateY(4px);
-            border-bottom: 0px;
-        }
-        .btn.active {
-            background-color: #4CAF50;
-            color: white;
-            border-bottom: 0px;
-            transform: translateY(4px);
-        }
-        #btn-brake.active { background-color: #f44336; }
-        #btn-neutral.active { background-color: #ff9800; }
-        
-        #speedometer {
-            background: #111;
-            border: 3px solid #555;
-            border-radius: 10px;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.75);
             padding: 20px;
-            text-align: center;
-            min-width: 150px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            pointer-events: none;
         }
-        #speed-value {
-            font-size: 36px;
-            font-weight: bold;
-            color: #00ff00;
-        }
-        #log {
+        h2 { margin: 0 0 10px 0; font-size: 18px; color: #00ffcc; text-transform: uppercase; }
+        .param { margin: 8px 0; font-size: 14px; }
+        .value { font-weight: bold; }
+        .status-on { color: #00ff00; }
+        .status-off { color: #ff3333; }
+        
+        #controls-help {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            background: rgba(0,0,0,0.5);
-            padding: 10px;
+            bottom: 20px;
+            right: 20px;
+            color: #ccc;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            border: 1px solid #444;
+        }
+        .key {
+            background: #444;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            border-bottom: 2px solid #222;
+        }
+        #warning {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff3333;
+            background: rgba(0,0,0,0.8);
+            padding: 15px 30px;
             border-radius: 5px;
+            font-size: 20px;
+            font-weight: bold;
+            display: none;
+            border: 2px solid #ff3333;
         }
     </style>
+    <!-- Подключаем Three.js и GLTFLoader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 
-    <!-- 3D Канвас -->
-    <canvas id="game-canvas"></canvas>
+    <div id="canvas-container"></div>
 
-    <!-- Логи и ошибки -->
-    <div id="log">Загрузка движка...</div>
-
-    <!-- Приборная панель (кабина) -->
-    <div id="dashboard">
-        <div class="control-group">
-            <span style="margin-bottom: 10px;">Контроллер тяги</span>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn" id="btn-accel">Разгон</button>
-                <button class="btn active" id="btn-neutral">Нейтраль</button>
-                <button class="btn" id="btn-brake">Тормоз</button>
-            </div>
-        </div>
-
-        <div class="control-group">
-            <div id="speedometer">
-                <div id="speed-value">0</div>
-                <div style="font-size: 14px; color: #aaa;">км/ч</div>
-            </div>
-        </div>
+    <div id="hud">
+        <h2>Троллейбус ЗиУ-682</h2>
+        <div class="param">Скорость: <span id="speed-val" class="value">0</span> км/ч</div>
+        <div class="param">Штанги (Рога): <span id="poles-val" class="value status-off">ОПУЩЕНЫ</span></div>
+        <div class="param">Двери: <span id="doors-val" class="value status-on">ОТКРЫТЫ</span></div>
     </div>
 
-    <!-- Подключаем Three.js и загрузчик GLTF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <div id="warning">СНАЧАЛА ПОДНИМИТЕ РОГА (КЛАВИША S)!</div>
+
+    <div id="controls-help">
+        <strong>Управление:</strong><br>
+        <span class="key">A</span> — Газ | <span class="key">D</span> — Тормоз<br>
+        <span class="key">S</span> — Поднять/опустить рога<br>
+        <span class="key">W</span> — Открыть/закрыть двери<br>
+        <span class="key">←</span> <span class="key">→</span> — Руль (Стрелочки)
+    </div>
 
     <script>
-        // --- ПЕРЕМЕННЫЕ ФИЗИКИ И СОСТОЯНИЯ ---
-        let speed = 0; // м/с
-        let maxSpeed = 30; // ~108 км/ч
-        let throttleState = 0; // 1 = разгон, 0 = нейтраль, -1 = тормоз
-        
-        const accelerationRate = 1.5; // Ускорение (м/с^2)
-        const brakingRate = 3.0; // Торможение (м/с^2)
-        const friction = 0.3; // Трение на нейтралке (м/с^2)
+        // Основные переменные сцены
+        let scene, camera, renderer;
+        let cityModel;
 
-        const logEl = document.getElementById('log');
-        const speedEl = document.getElementById('speed-value');
+        // Состояние троллейбуса
+        let state = {
+            polesUp: false,
+            doorsOpen: true,
+            speed: 0,
+            maxSpeed: 0.8, // Максимальная внутренняя скорость
+            braking: 0.02,
+            acceleration: 0.01,
+            friction: 0.004,
+            heading: 0,    // Направление движения в радианах
+            steering: 0    // Угол поворота руля
+        };
 
-        // --- ИНИЦИАЛИЗАЦИЯ THREE.JS ---
-        const canvas = document.getElementById('game-canvas');
-        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.outputEncoding = THREE.sRGBEncoding;
+        // Флаги нажатых клавиш
+        const keysPressed = {};
 
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87CEEB); // Голубое небо
-        scene.fog = new THREE.Fog(0x87CEEB, 50, 500); // Легкая дымка для реализма
+        function init() {
+            const container = document.getElementById('canvas-container');
 
-        // Камера (глаза машиниста)
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-        // Координаты из вашего ТЗ: X: 0, Y: 95, Z: 2 (с учетом конвертации осей)
-        camera.position.set(0, 2, -95); 
+            // 1. Создание сцены
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a24);
+            scene.fog = new THREE.FogExp2(0x1a1a24, 0.015);
 
-        // Освещение
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
-        
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(100, 200, 50);
-        scene.add(dirLight);
+            // 2. Камера (Вид от первого лица)
+            // Перевод координат из Blender (Z-up) в Three.js (Y-up):
+            // Blender X:0, Y:0, Z:2 -> Three.js X:0, Y:2, Z:0
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 0); 
 
-        // --- ЗАГРУЗКА КАРТЫ ИЗ BLENDER ---
-        const loader = new THREE.GLTFLoader();
-        logEl.innerText = "Загрузка карты (map.glb)...";
-        
-        loader.load(
-            'map.glb', // Убедитесь, что файл называется так и лежит в папке
-            function (gltf) {
-                scene.add(gltf.scene);
-                logEl.innerText = "Карта успешно загружена!";
-                setTimeout(() => logEl.style.display = 'none', 3000);
-            },
-            function (xhr) {
-                const percent = Math.round((xhr.loaded / xhr.total) * 100);
-                if (percent) logEl.innerText = `Загрузка карты: ${percent}%`;
-            },
-            function (error) {
-                console.error(error);
-                logEl.innerText = "Ошибка загрузки карты! Проверьте локальный сервер и наличие файла map.glb.";
-                
-                // Создаем тестовую землю, если карта не загрузилась
-                const geo = new THREE.PlaneGeometry(1000, 1000);
-                const mat = new THREE.MeshLambertMaterial({ color: 0x55aa55 });
-                const plane = new THREE.Mesh(geo, mat);
-                plane.rotation.x = -Math.PI / 2;
-                scene.add(plane);
-                
-                // И тестовые рельсы для наглядности
-                const railGeo = new THREE.BoxGeometry(0.1, 0.18, 1000);
-                const railMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
-                const rail1 = new THREE.Mesh(railGeo, railMat);
-                rail1.position.set(-0.75, 0.09, 0); // Колея 1.5м
-                const rail2 = new THREE.Mesh(railGeo, railMat);
-                rail2.position.set(0.75, 0.09, 0);
-                scene.add(rail1);
-                scene.add(rail2);
-            }
-        );
+            // 3. Рендерер
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
 
-        // --- УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ---
-        const btnAccel = document.getElementById('btn-accel');
-        const btnNeutral = document.getElementById('btn-neutral');
-        const btnBrake = document.getElementById('btn-brake');
+            // 4. Освещение
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
 
-        function setThrottle(state) {
-            throttleState = state;
-            btnAccel.classList.remove('active');
-            btnNeutral.classList.remove('active');
-            btnBrake.classList.remove('active');
+            const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            sunLight.position.set(50, 100, 50);
+            scene.add(sunLight);
 
-            if (state === 1) btnAccel.classList.add('active');
-            else if (state === 0) btnNeutral.classList.add('active');
-            else if (state === -1) btnBrake.classList.add('active');
+            // 5. Контактная сеть и окружение по умолчанию (Резервный вариант)
+            createFallbackEnvironment();
+
+            // 6. Загрузка карты city.glb
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+                './city.glb',
+                function (gltf) {
+                    cityModel = gltf.scene;
+                    scene.add(cityModel);
+                    console.log("Карта city.glb успешно загружена!");
+                },
+                function (xhr) {
+                    console.log((xhr.loaded / xhr.total * 100) + '% загружено карты');
+                },
+                function (error) {
+                    console.warn("Файл city.glb не найден в папке. Запущено процедурное окружение.");
+                }
+            );
+
+            // 7. Подписка на события клавиатуры
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+            window.addEventListener('resize', onWindowResize);
+
+            // Запуск цикла анимации
+            animate();
         }
 
-        btnAccel.addEventListener('click', () => setThrottle(1));
-        btnNeutral.addEventListener('click', () => setThrottle(0));
-        btnBrake.addEventListener('click', () => setThrottle(-1));
+        // Процедурные провода и дороги на случай отсутствия city.glb
+        function createFallbackEnvironment() {
+            // Земля/Асфальт
+            const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x222225, roughness: 0.8 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            scene.add(ground);
 
-        // Горячие клавиши (W - разгон, S - нейтраль, Space - тормоз)
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'KeyW' || e.code === 'ArrowUp') setThrottle(1);
-            if (e.code === 'KeyS' || e.code === 'ArrowDown') setThrottle(0);
-            if (e.code === 'Space') setThrottle(-1);
-        });
+            // Разметка дороги
+            const roadGeo = new THREE.PlaneGeometry(6, 1000);
+            const roadMat = new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.7 });
+            const road = new THREE.Mesh(roadGeo, roadMat);
+            road.rotation.x = -Math.PI / 2;
+            road.position.y = 0.01;
+            scene.add(road);
 
-        // --- ИГРОВОЙ ЦИКЛ (ФИЗИКА И РЕНДЕР) ---
-        const clock = new THREE.Clock();
+            // Столбы и провода КС (Контактной сети)
+            for (let z = -500; z < 500; z += 40) {
+                // Столб слева
+                const poleGeo = new THREE.CylinderGeometry(0.1, 0.15, 8);
+                const poleMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+                const poleL = new THREE.Mesh(poleGeo, poleMat);
+                poleL.position.set(-5, 4, z);
+                scene.add(poleL);
 
-        function animate() {
-            requestAnimationFrame(animate);
+                // Поперечный трос
+                const wireGeo = new THREE.CylinderGeometry(0.01, 0.01, 10);
+                const wireMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+                const wire = new THREE.Mesh(wireGeo, wireMat);
+                wire.rotation.z = Math.PI / 2;
+                wire.position.set(0, 7.5, z);
+                scene.add(wire);
+            }
 
-            const delta = clock.getDelta(); // Время между кадрами (для плавной физики)
+            // Продольные контактные провода (два провода для штангового токосъема)
+            const wireMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+            const wireLeftGeo = new THREE.CylinderGeometry(0.01, 0.01, 1000);
+            const wireLeft = new THREE.Mesh(wireLeftGeo, wireMaterial);
+            wireLeft.rotation.x = Math.PI / 2;
+            wireLeft.position.set(-0.5, 7.4, 0);
+            scene.add(wireLeft);
 
-            // Логика скорости
-            if (throttleState === 1) {
-                // Разгон
-                speed += accelerationRate * delta;
-                if (speed > maxSpeed) speed = maxSpeed;
-            } else if (throttleState === -1) {
-                // Торможение
-                speed -= brakingRate * delta;
-                if (speed < 0) speed = 0;
-            } else {
-                // Нейтралка (трение)
-                if (speed > 0) {
-                    speed -= friction * delta;
-                    if (speed < 0) speed = 0;
+            const wireRight = wireLeft.clone();
+            wireRight.position.set(0.5, 7.4, 0);
+            scene.add(wireRight);
+        }
+
+        // Обработка нажатий
+        function onKeyDown(e) {
+            keysPressed[e.code] = true;
+
+            // Одиночные переключения (Toggles)
+            if (e.code === 'KeyS') { // Рога
+                state.polesUp = !state.polesUp;
+                const el = document.getElementById('poles-val');
+                if (state.polesUp) {
+                    el.innerText = "ПОДНЯТЫ";
+                    el.className = "value status-on";
+                    document.getElementById('warning').style.display = 'none';
+                } else {
+                    el.innerText = "ОПУЩЕНЫ";
+                    el.className = "value status-off";
                 }
             }
 
-            // Движение поезда (перемещаем камеру вдоль оси Z)
-            // Если в вашей карте пути идут вдоль другой оси, измените Z на X или Y.
-            camera.position.z -= speed * delta;
+            if (e.code === 'KeyW') { // Двери
+                state.doorsOpen = !state.doorsOpen;
+                const el = document.getElementById('doors-val');
+                if (state.doorsOpen) {
+                    el.innerText = "ОТКРЫТЫ";
+                    el.className = "value status-on";
+                } else {
+                    el.innerText = "ЗАКРЫТЫ";
+                    el.className = "value status-off";
+                }
+            }
+        }
 
-            // Обновляем спидометр (перевод м/с в км/ч)
-            const kmh = Math.round(speed * 3.6);
-            speedEl.innerText = kmh;
+        function onKeyUp(e) {
+            keysPressed[e.code] = false;
+        }
+
+        // Обновление физики и перемещения
+        function updatePhysics() {
+            // Нажата кнопка Газ (A)
+            if (keysPressed['KeyA']) {
+                if (state.polesUp) {
+                    state.speed += state.acceleration;
+                    if (state.speed > state.maxSpeed) state.speed = state.maxSpeed;
+                } else {
+                    // Предупреждение, если пытаемся ехать без рогов
+                    document.getElementById('warning').style.display = 'block';
+                }
+            } else {
+                if (!keysPressed['KeyA'] && document.getElementById('warning').style.display === 'block') {
+                    document.getElementById('warning').style.display = 'none';
+                }
+            }
+
+            // Нажата кнопка Тормоз (D)
+            if (keysPressed['KeyD']) {
+                state.speed -= state.braking;
+                if (state.speed < 0) state.speed = 0;
+            }
+
+            // Естественное трение и сопротивление воздуха, если не зажат газ
+            if (!keysPressed['KeyA'] && state.speed > 0) {
+                state.speed -= state.friction;
+                if (state.speed < 0) state.speed = 0;
+            }
+
+            // Поворот руля (Стрелочки влево / вправо)
+            if (keysPressed['ArrowLeft']) {
+                state.heading += state.turnSpeed * (state.speed * 1.5); // Скорость поворота зависит от движения
+            }
+            if (keysPressed['ArrowRight']) {
+                state.heading -= state.turnSpeed * (state.speed * 1.5);
+            }
+
+            // Изменение позиции камеры на основе вектора направления и скорости
+            // В Three.js движение вперед идет по отрицательной оси Z при угле 0
+            camera.position.x += Math.sin(state.heading) * state.speed;
+            camera.position.z += Math.cos(state.heading) * state.speed;
+
+            // Поворот взгляда камеры
+            camera.rotation.y = state.heading;
+        }
+
+        // Обновление значений в HUD панели
+        function updateHUD() {
+            // Переводим внутреннюю скорость в условные км/ч для реалистичности отображения
+            const displaySpeed = Math.round(state.speed * 120);
+            document.getElementById('speed-val').innerText = displaySpeed;
+        }
+
+        // Главный игровой цикл
+        function animate() {
+            requestAnimationFrame(animate);
+
+            updatePhysics();
+            updateHUD();
 
             renderer.render(scene, camera);
         }
 
-        // Адаптация под размер окна
-        window.addEventListener('resize', () => {
+        // Адаптация под изменение размеров окна браузера
+        function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        }
 
-        // Запуск
-        animate();
+        // Запуск при загрузке страницы
+        window.onload = init;
     </script>
 </body>
 </html>
