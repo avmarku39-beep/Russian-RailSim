@@ -9,12 +9,16 @@
             margin: 0;
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #000;
+            background-color: #1a1a24;
             user-select: none;
         }
         #canvas-container {
             width: 100vw;
             height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
         }
         /* HUD Интерфейс */
         #hud {
@@ -22,10 +26,11 @@
             top: 20px;
             left: 20px;
             color: #fff;
-            background: rgba(0, 0, 0, 0.75);
+            background: rgba(0, 0, 0, 0.8);
             padding: 20px;
             border-radius: 10px;
             border: 1px solid #333;
+            z-index: 10;
             pointer-events: none;
         }
         h2 { margin: 0 0 10px 0; font-size: 18px; color: #00ffcc; text-transform: uppercase; }
@@ -45,6 +50,7 @@
             font-size: 13px;
             line-height: 1.5;
             border: 1px solid #444;
+            z-index: 10;
         }
         .key {
             background: #444;
@@ -56,26 +62,83 @@
         }
         #warning {
             position: absolute;
-            top: 40%;
+            top: 35%;
             left: 50%;
             transform: translate(-50%, -50%);
             color: #ff3333;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.9);
             padding: 15px 30px;
             border-radius: 5px;
             font-size: 20px;
             font-weight: bold;
             display: none;
             border: 2px solid #ff3333;
+            z-index: 10;
+        }
+
+        /* Визуализация кабины и руля водителя */
+        #cabin-panel {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 180px;
+            background: linear-gradient(to top, #111 70%, #222 100%);
+            border-top: 4px solid #333;
+            z-index: 5;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+        }
+        #steering-wheel-container {
+            margin-bottom: -30px;
+            perspective: 500px;
+        }
+        #steering-wheel {
+            width: 180px;
+            height: 180px;
+            border: 18px solid #282828;
+            border-radius: 50%;
+            position: relative;
+            transform-style: preserve-3d;
+            transform: rotateX(40deg) rotateZ(0deg);
+            box-shadow: inset 0 0 15px #000, 0 10px 20px rgba(0,0,0,0.8);
+            background: radial-gradient(circle, transparent 40%, #1a1a1a 41%);
+        }
+        #steering-wheel::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 18px;
+            background: #282828;
+            transform: translateY(-50%);
+        }
+        #steering-wheel::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 18px;
+            height: 50%;
+            background: #282828;
+            transform: translateX(-50%);
         }
     </style>
-    <!-- Подключаем Three.js и GLTFLoader -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 
     <div id="canvas-container"></div>
+
+    <div id="cabin-panel">
+        <div id="steering-wheel-container">
+            <div id="steering-wheel"></div>
+        </div>
+    </div>
 
     <div id="hud">
         <h2>Троллейбус ЗиУ-682</h2>
@@ -95,137 +158,117 @@
     </div>
 
     <script>
-        // Основные переменные сцены
         let scene, camera, renderer;
         let cityModel;
 
-        // Состояние троллейбуса
         let state = {
             polesUp: false,
             doorsOpen: true,
             speed: 0,
-            maxSpeed: 0.8, // Максимальная внутренняя скорость
-            braking: 0.02,
-            acceleration: 0.01,
-            friction: 0.004,
-            heading: 0,    // Направление движения в радианах
-            steering: 0    // Угол поворота руля
+            maxSpeed: 0.6, 
+            braking: 0.015,
+            acceleration: 0.008,
+            friction: 0.003,
+            heading: 0,    
+            steering: 0    // Угол поворота руля для анимации
         };
 
-        // Флаги нажатых клавиш
         const keysPressed = {};
 
         function init() {
             const container = document.getElementById('canvas-container');
 
-            // 1. Создание сцены
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a24);
             scene.fog = new THREE.FogExp2(0x1a1a24, 0.015);
 
-            // 2. Камера (Вид от первого лица)
-            // Перевод координат из Blender (Z-up) в Three.js (Y-up):
-            // Blender X:0, Y:0, Z:2 -> Three.js X:0, Y:2, Z:0
+            // Спавн игрока: Blender X:0, Y:0, Z:2 -> Three.js X:0, Y:2, Z:0
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 2, 0); 
 
-            // 3. Рендерер
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // 4. Освещение
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
 
             const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
             sunLight.position.set(50, 100, 50);
             scene.add(sunLight);
 
-            // 5. Контактная сеть и окружение по умолчанию (Резервный вариант)
+            // Генерация базового мира (пока грузится основная карта)
             createFallbackEnvironment();
 
-            // 6. Загрузка карты city.glb
+            // Загрузка карты
             const loader = new THREE.GLTFLoader();
             loader.load(
                 './city.glb',
                 function (gltf) {
                     cityModel = gltf.scene;
                     scene.add(cityModel);
-                    console.log("Карта city.glb успешно загружена!");
+                    console.log("Карта успешно загружена!");
                 },
-                function (xhr) {
-                    console.log((xhr.loaded / xhr.total * 100) + '% загружено карты');
-                },
+                null,
                 function (error) {
-                    console.warn("Файл city.glb не найден в папке. Запущено процедурное окружение.");
+                    console.warn("Файл city.glb не найден. Запущено процедурное окружение.");
                 }
             );
 
-            // 7. Подписка на события клавиатуры
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('keyup', onKeyUp);
             window.addEventListener('resize', onWindowResize);
 
-            // Запуск цикла анимации
             animate();
         }
 
-        // Процедурные провода и дороги на случай отсутствия city.glb
         function createFallbackEnvironment() {
-            // Земля/Асфальт
             const groundGeo = new THREE.PlaneGeometry(1000, 1000);
-            const groundMat = new THREE.MeshStandardMaterial({ color: 0x222225, roughness: 0.8 });
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x1e1e22, roughness: 0.9 });
             const ground = new THREE.Mesh(groundGeo, groundMat);
             ground.rotation.x = -Math.PI / 2;
             scene.add(ground);
 
-            // Разметка дороги
-            const roadGeo = new THREE.PlaneGeometry(6, 1000);
-            const roadMat = new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.7 });
+            const roadGeo = new THREE.PlaneGeometry(8, 1000);
+            const roadMat = new THREE.MeshStandardMaterial({ color: 0x28282c, roughness: 0.7 });
             const road = new THREE.Mesh(roadGeo, roadMat);
             road.rotation.x = -Math.PI / 2;
             road.position.y = 0.01;
             scene.add(road);
 
-            // Столбы и провода КС (Контактной сети)
-            for (let z = -500; z < 500; z += 40) {
-                // Столб слева
-                const poleGeo = new THREE.CylinderGeometry(0.1, 0.15, 8);
-                const poleMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
-                const poleL = new THREE.Mesh(poleGeo, poleMat);
-                poleL.position.set(-5, 4, z);
-                scene.add(poleL);
-
-                // Поперечный трос
-                const wireGeo = new THREE.CylinderGeometry(0.01, 0.01, 10);
-                const wireMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-                const wire = new THREE.Mesh(wireGeo, wireMat);
-                wire.rotation.z = Math.PI / 2;
-                wire.position.set(0, 7.5, z);
-                scene.add(wire);
+            // Линии разметки
+            for(let i = -500; i < 500; i += 20) {
+                const dashGeo = new THREE.PlaneGeometry(0.2, 8);
+                const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const dash = new THREE.Mesh(dashGeo, dashMat);
+                dash.rotation.x = -Math.PI / 2;
+                dash.position.set(0, 0.02, i);
+                scene.add(dash);
             }
 
-            // Продольные контактные провода (два провода для штангового токосъема)
-            const wireMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
-            const wireLeftGeo = new THREE.CylinderGeometry(0.01, 0.01, 1000);
-            const wireLeft = new THREE.Mesh(wireLeftGeo, wireMaterial);
-            wireLeft.rotation.x = Math.PI / 2;
-            wireLeft.position.set(-0.5, 7.4, 0);
-            scene.add(wireLeft);
+            // Провода контактной сети
+            const wireMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            const wLGeo = new THREE.CylinderGeometry(0.01, 0.01, 1000);
+            const wL = new THREE.Mesh(wLGeo, wireMat);
+            wL.rotation.x = Math.PI / 2;
+            wL.position.set(-0.7, 7.5, 0);
+            scene.add(wL);
 
-            const wireRight = wireLeft.clone();
-            wireRight.position.set(0.5, 7.4, 0);
-            scene.add(wireRight);
+            const wR = wL.clone();
+            wR.position.set(0.7, 7.5, 0);
+            scene.add(wR);
         }
 
-        // Обработка нажатий
         function onKeyDown(e) {
+            // Отменяем дефолтное поведение браузера для игровых клавиш (защита от исчезновения карты)
+            if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'KeyW', 'KeyS'].includes(e.code)) {
+                e.preventDefault();
+            }
+
             keysPressed[e.code] = true;
 
-            // Одиночные переключения (Toggles)
-            if (e.code === 'KeyS') { // Рога
+            if (e.code === 'KeyS') { 
                 state.polesUp = !state.polesUp;
                 const el = document.getElementById('poles-val');
                 if (state.polesUp) {
@@ -238,7 +281,7 @@
                 }
             }
 
-            if (e.code === 'KeyW') { // Двери
+            if (e.code === 'KeyW') { 
                 state.doorsOpen = !state.doorsOpen;
                 const el = document.getElementById('doors-val');
                 if (state.doorsOpen) {
@@ -252,80 +295,81 @@
         }
 
         function onKeyUp(e) {
+            if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'KeyW', 'KeyS'].includes(e.code)) {
+                e.preventDefault();
+            }
             keysPressed[e.code] = false;
         }
 
-        // Обновление физики и перемещения
         function updatePhysics() {
-            // Нажата кнопка Газ (A)
+            // Логика Газа (A)
             if (keysPressed['KeyA']) {
                 if (state.polesUp) {
                     state.speed += state.acceleration;
                     if (state.speed > state.maxSpeed) state.speed = state.maxSpeed;
                 } else {
-                    // Предупреждение, если пытаемся ехать без рогов
                     document.getElementById('warning').style.display = 'block';
                 }
             } else {
-                if (!keysPressed['KeyA'] && document.getElementById('warning').style.display === 'block') {
+                if (document.getElementById('warning').style.display === 'block') {
                     document.getElementById('warning').style.display = 'none';
                 }
             }
 
-            // Нажата кнопка Тормоз (D)
+            // Логика Тормоза (D)
             if (keysPressed['KeyD']) {
                 state.speed -= state.braking;
                 if (state.speed < 0) state.speed = 0;
             }
 
-            // Естественное трение и сопротивление воздуха, если не зажат газ
+            // Трение
             if (!keysPressed['KeyA'] && state.speed > 0) {
                 state.speed -= state.friction;
                 if (state.speed < 0) state.speed = 0;
             }
 
-            // Поворот руля (Стрелочки влево / вправо)
+            // Рулевое управление (Стрелочки) + анимация руля в кабине
+            const turnFactor = 0.02; // Стабильная скорость поворота
             if (keysPressed['ArrowLeft']) {
-                state.heading += state.turnSpeed * (state.speed * 1.5); // Скорость поворота зависит от движения
-            }
-            if (keysPressed['ArrowRight']) {
-                state.heading -= state.turnSpeed * (state.speed * 1.5);
+                state.heading += turnFactor * (state.speed * 1.2 + 0.2); // Поворачивает плавно, даже если еле ползет
+                state.steering = Math.max(state.steering - 0.1, -1.2); 
+            } else if (keysPressed['ArrowRight']) {
+                state.heading -= turnFactor * (state.speed * 1.2 + 0.2);
+                state.steering = Math.min(state.steering + 0.1, 1.2);
+            } else {
+                // Плавный возврат руля в исходное положение
+                state.steering *= 0.85;
             }
 
-            // Изменение позиции камеры на основе вектора направления и скорости
-            // Стало (теперь едем вперед):
+            // Вращаем руль на экране через CSS
+            document.getElementById('steering-wheel').style.transform = `rotateX(40deg) rotateZ(${state.steering * 90}deg)`;
+
+            // Движение строго ВПЕРЕД (с учетом исправленного реверса осей)
             camera.position.x -= Math.sin(state.heading) * state.speed;
             camera.position.z -= Math.cos(state.heading) * state.speed;
 
-            // Поворот взгляда камеры
-            camera.rotation.y = state.heading;
+            // Применяем стабильное вращение камеры
+            camera.rotation.set(0, state.heading, 0);
         }
 
-        // Обновление значений в HUD панели
         function updateHUD() {
-            // Переводим внутреннюю скорость в условные км/ч для реалистичности отображения
-            const displaySpeed = Math.round(state.speed * 120);
+            const displaySpeed = Math.round(state.speed * 140);
             document.getElementById('speed-val').innerText = displaySpeed;
         }
 
-        // Главный игровой цикл
         function animate() {
             requestAnimationFrame(animate);
-
             updatePhysics();
             updateHUD();
-
             renderer.render(scene, camera);
         }
 
-        // Адаптация под изменение размеров окна браузера
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Запуск при загрузке страницы
         window.onload = init;
     </script>
 </body>
