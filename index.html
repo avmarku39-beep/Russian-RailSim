@@ -162,17 +162,16 @@
         let scene, camera, renderer;
         let cityModel;
 
-        // Физические параметры тяжелого троллейбуса
         let state = {
             polesUp: false,
             doorsOpen: true,
             speed: 0,
-            maxSpeed: 0.45,       // Ограничение скорости (~63 км/ч для города)
-            braking: 0.0035,      // Плавное, тяжелое торможение
-            acceleration: 0.0012, // Медленный, реалистичный разгон тяжелой машины
-            friction: 0.0003,     // Минимальное трение для долгого реалистичного наката
+            maxSpeed: 0.45,       
+            braking: 0.0035,      
+            acceleration: 0.0012, 
+            friction: 0.0003,     
             heading: 0,    
-            steering: 0           // Текущее положение руля колес
+            steering: 0           
         };
 
         const keysPressed = {};
@@ -184,7 +183,6 @@
             scene.background = new THREE.Color(0x1a1a24);
             scene.fog = new THREE.FogExp2(0x1a1a24, 0.015);
 
-            // Спавн игрока: Blender X:0, Y:0, Z:2 -> Three.js X:0, Y:2, Z:0
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 2, 0); 
 
@@ -200,10 +198,8 @@
             sunLight.position.set(50, 100, 50);
             scene.add(sunLight);
 
-            // Генерация базового мира (пока грузится основная карта)
             createFallbackEnvironment();
 
-            // Загрузка карты
             const loader = new THREE.GLTFLoader();
             loader.load(
                 './city.glb',
@@ -239,7 +235,6 @@
             road.position.y = 0.01;
             scene.add(road);
 
-            // Линии разметки
             for(let i = -500; i < 500; i += 20) {
                 const dashGeo = new THREE.PlaneGeometry(0.2, 8);
                 const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -249,7 +244,6 @@
                 scene.add(dash);
             }
 
-            // Провода контактной сети
             const wireMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
             const wLGeo = new THREE.CylinderGeometry(0.01, 0.01, 1000);
             const wL = new THREE.Mesh(wLGeo, wireMat);
@@ -263,7 +257,6 @@
         }
 
         function onKeyDown(e) {
-            // Отменяем дефолтное поведение браузера для игровых клавиш
             if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'KeyW', 'KeyS'].includes(e.code)) {
                 e.preventDefault();
             }
@@ -304,7 +297,6 @@
         }
 
         function updatePhysics() {
-            // Логика Газа (A)
             if (keysPressed['KeyA']) {
                 if (state.polesUp) {
                     state.speed += state.acceleration;
@@ -318,50 +310,44 @@
                 }
             }
 
-            // Логика Тормоза (D)
             if (keysPressed['KeyD']) {
                 state.speed -= state.braking;
                 if (state.speed < 0) state.speed = 0;
             }
 
-            // Накат (Очень слабое трение при отсутствии нажатых педалей)
             if (!keysPressed['KeyA'] && !keysPressed['KeyD'] && state.speed > 0) {
                 state.speed -= state.friction;
                 if (state.speed < 0) state.speed = 0;
             }
 
-            // Рулевое управление с глубоким ходом рулевого колеса
-            const steeringSpeed = 0.04; // Скорость вращения руля водителем
-            const maxSteering = 3.0;    // Лимит вращения руля (3.0 * 180 = 540 градусов в каждую сторону)
+            // --- ОБНОВЛЕННАЯ СКОРОСТНАЯ РУЛЕВАЯ СИСТЕМА ---
+            const steeringSpeed = 0.14; // Скорость отклика увеличена (было 0.04)
+            const maxSteering = 3.0;    // Угол поворота руля до 540 градусов сохраняется
             
             if (keysPressed['ArrowLeft']) {
                 state.steering = Math.max(state.steering - steeringSpeed, -maxSteering);
             } else if (keysPressed['ArrowRight']) {
                 state.steering = Math.min(state.steering + steeringSpeed, maxSteering);
             } else {
-                // Возврат руля в исходное положение (эффект самовыравнивания колёс)
-                state.steering *= 0.94;
+                // Возврат руля в центр также сделан более динамичным, чтобы его не "заклинивало" после поворота
+                state.steering *= 0.86; 
                 if (Math.abs(state.steering) < 0.01) state.steering = 0;
             }
 
-            // Вращаем графический руль на экране через CSS
             document.getElementById('steering-wheel').style.transform = `rotateX(40deg) rotateZ(${state.steering * 180}deg)`;
 
-            // Реалистичная поворачиваемость: скорость поворота пропорциональна углу руля и скорости машины
-            // Стоя на месте, повернуть курс троллейбуса нельзя
-            const turnEffectiveness = 0.012; 
-            state.heading -= state.steering * state.speed * turnEffectiveness;
+            // Увеличили силу поворота (0.022 вместо 0.012) и добавили базовый коэффициент манёвренности (+0.08)
+            // Это позволяет входить в повороты даже на минимальной скорости
+            const turnEffectiveness = 0.022; 
+            state.heading -= state.steering * (state.speed + 0.08) * turnEffectiveness;
 
-            // Движение вперед с учетом инерции и направления
             camera.position.x -= Math.sin(state.heading) * state.speed;
             camera.position.z -= Math.cos(state.heading) * state.speed;
 
-            // Направление взгляда водителя
             camera.rotation.set(0, state.heading, 0);
         }
 
         function updateHUD() {
-            // Преобразуем условную скорость в понятные километры в час
             const displaySpeed = Math.round(state.speed * 140);
             document.getElementById('speed-val').innerText = displaySpeed;
         }
