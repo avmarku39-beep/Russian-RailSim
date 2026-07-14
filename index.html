@@ -134,6 +134,7 @@
 
     <div id="canvas-container"></div>
 
+    <!-- Индикатор кабины (Руль) -->
     <div id="cabin-panel">
         <div id="steering-wheel-container">
             <div id="steering-wheel"></div>
@@ -161,16 +162,17 @@
         let scene, camera, renderer;
         let cityModel;
 
+        // Физические параметры тяжелого троллейбуса
         let state = {
             polesUp: false,
             doorsOpen: true,
             speed: 0,
-            maxSpeed: 0.6, 
-            braking: 0.015,
-            acceleration: 0.008,
-            friction: 0.003,
+            maxSpeed: 0.45,       // Ограничение скорости (~63 км/ч для города)
+            braking: 0.0035,      // Плавное, тяжелое торможение
+            acceleration: 0.0012, // Медленный, реалистичный разгон тяжелой машины
+            friction: 0.0003,     // Минимальное трение для долгого реалистичного наката
             heading: 0,    
-            steering: 0    // Угол поворота руля для анимации
+            steering: 0           // Текущее положение руля колес
         };
 
         const keysPressed = {};
@@ -261,7 +263,7 @@
         }
 
         function onKeyDown(e) {
-            // Отменяем дефолтное поведение браузера для игровых клавиш (защита от исчезновения карты)
+            // Отменяем дефолтное поведение браузера для игровых клавиш
             if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'KeyW', 'KeyS'].includes(e.code)) {
                 e.preventDefault();
             }
@@ -322,37 +324,44 @@
                 if (state.speed < 0) state.speed = 0;
             }
 
-            // Трение
-            if (!keysPressed['KeyA'] && state.speed > 0) {
+            // Накат (Очень слабое трение при отсутствии нажатых педалей)
+            if (!keysPressed['KeyA'] && !keysPressed['KeyD'] && state.speed > 0) {
                 state.speed -= state.friction;
                 if (state.speed < 0) state.speed = 0;
             }
 
-            // Рулевое управление (Стрелочки) + анимация руля в кабине
-            const turnFactor = 0.02; // Стабильная скорость поворота
+            // Рулевое управление с глубоким ходом рулевого колеса
+            const steeringSpeed = 0.04; // Скорость вращения руля водителем
+            const maxSteering = 3.0;    // Лимит вращения руля (3.0 * 180 = 540 градусов в каждую сторону)
+            
             if (keysPressed['ArrowLeft']) {
-                state.heading += turnFactor * (state.speed * 1.2 + 0.2); // Поворачивает плавно, даже если еле ползет
-                state.steering = Math.max(state.steering - 0.1, -1.2); 
+                state.steering = Math.max(state.steering - steeringSpeed, -maxSteering);
             } else if (keysPressed['ArrowRight']) {
-                state.heading -= turnFactor * (state.speed * 1.2 + 0.2);
-                state.steering = Math.min(state.steering + 0.1, 1.2);
+                state.steering = Math.min(state.steering + steeringSpeed, maxSteering);
             } else {
-                // Плавный возврат руля в исходное положение
-                state.steering *= 0.85;
+                // Возврат руля в исходное положение (эффект самовыравнивания колёс)
+                state.steering *= 0.94;
+                if (Math.abs(state.steering) < 0.01) state.steering = 0;
             }
 
-            // Вращаем руль на экране через CSS
-            document.getElementById('steering-wheel').style.transform = `rotateX(40deg) rotateZ(${state.steering * 90}deg)`;
+            // Вращаем графический руль на экране через CSS
+            document.getElementById('steering-wheel').style.transform = `rotateX(40deg) rotateZ(${state.steering * 180}deg)`;
 
-            // Движение строго ВПЕРЕД (с учетом исправленного реверса осей)
+            // Реалистичная поворачиваемость: скорость поворота пропорциональна углу руля и скорости машины
+            // Стоя на месте, повернуть курс троллейбуса нельзя
+            const turnEffectiveness = 0.012; 
+            state.heading -= state.steering * state.speed * turnEffectiveness;
+
+            // Движение вперед с учетом инерции и направления
             camera.position.x -= Math.sin(state.heading) * state.speed;
             camera.position.z -= Math.cos(state.heading) * state.speed;
 
-            // Применяем стабильное вращение камеры
+            // Направление взгляда водителя
             camera.rotation.set(0, state.heading, 0);
         }
 
         function updateHUD() {
+            // Преобразуем условную скорость в понятные километры в час
             const displaySpeed = Math.round(state.speed * 140);
             document.getElementById('speed-val').innerText = displaySpeed;
         }
